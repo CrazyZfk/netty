@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.internal.tcnative.Buffer;
+import io.netty.internal.tcnative.CertificateCallback;
 import io.netty.internal.tcnative.Library;
 import io.netty.internal.tcnative.SSL;
 import io.netty.internal.tcnative.SSLContext;
@@ -33,8 +34,6 @@ import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
 import java.io.ByteArrayInputStream;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -235,7 +234,11 @@ public final class OpenSsl {
 
                         PemEncoded privateKey = PemPrivateKey.valueOf(KEY.getBytes(CharsetUtil.US_ASCII));
                         try {
-                             X509Certificate certificate = selfSignedCertificate();
+                            // Let's check if we can set a callback, which may not work if the used OpenSSL version
+                            // is to old.
+                            SSLContext.setCertificateCallback(sslCtx, new NoopCertificateCallback());
+
+                            X509Certificate certificate = selfSignedCertificate();
                             certBio = ReferenceCountedOpenSslContext.toBIO(ByteBufAllocator.DEFAULT, certificate);
                             cert = SSL.parseX509Chain(certBio);
 
@@ -582,5 +585,13 @@ public final class OpenSsl {
 
     static boolean isBoringSSL() {
         return IS_BORINGSSL;
+    }
+
+    // MUST be static to not leak.
+    private static final class NoopCertificateCallback implements CertificateCallback {
+        @Override
+        public void handle(long ssl, byte[] keyTypeBytes, byte[][] asn1DerEncodedPrincipals) {
+            // NOOP.
+        }
     }
 }
